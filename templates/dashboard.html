@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Merchant Underwriting Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f8f9fb; color: #222; }
+    h1 { margin-bottom: 16px; }
+    .summary { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .card { background: #fff; border: 1px solid #e4e6eb; border-radius: 8px; padding: 12px; }
+    .label { font-size: 12px; color: #666; }
+    .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e4e6eb; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #fafafa; }
+    .tier-1 { color: #17803d; font-weight: 700; }
+    .tier-2 { color: #c36a00; font-weight: 700; }
+    .tier-3 { color: #c62828; font-weight: 700; }
+    .rejected { color: #777; font-weight: 700; }
+    button { padding: 6px 10px; border: 1px solid #d0d4da; border-radius: 6px; background: #fff; cursor: pointer; }
+    .muted { color: #888; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Merchant Underwriting Dashboard</h1>
+
+  <section class="summary">
+    <div class="card"><div class="label">Total Merchants</div><div class="value">{{ portfolio_summary.total_merchants }}</div></div>
+    <div class="card"><div class="label">Approved</div><div class="value">{{ portfolio_summary.total_approved }}</div></div>
+    <div class="card"><div class="label">Rejected</div><div class="value">{{ portfolio_summary.total_rejected }}</div></div>
+    <div class="card"><div class="label">Rejection Rate %</div><div class="value">{{ portfolio_summary.rejection_rate_percentage }}</div></div>
+    <div class="card"><div class="label">Credit Exposure (L)</div><div class="value">{{ portfolio_summary.total_credit_exposure_lakhs }}</div></div>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>merchant_id</th>
+        <th>tier</th>
+        <th>confidence_level</th>
+        <th>status</th>
+        <th>credit_limit_lakhs</th>
+        <th>rejection_reason</th>
+        <th>action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in merchants %}
+      <tr id="row-{{ m.merchant_id }}">
+        <td>{{ m.merchant_id }}</td>
+        <td class="{{ m.tier_class }}">{{ m.tier or "-" }}</td>
+        <td>{{ m.confidence_level }}</td>
+        <td class="{{ 'rejected' if m.status == 'rejected' else '' }}">{{ m.status }}</td>
+        <td>{{ m.credit_limit_lakhs if m.credit_limit_lakhs is not none else "-" }}</td>
+        <td>{{ m.rejection_reason if m.rejection_reason else "-" }}</td>
+        <td>
+          {% if m.status == 'approved' and not m.accepted %}
+            <button onclick="acceptOffer('{{ m.merchant_id }}', this)">Accept</button>
+          {% elif m.accepted %}
+            <span class="muted">Mandate Initiated</span>
+          {% else %}
+            <span class="muted">N/A</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <script>
+    async function acceptOffer(merchantId, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/accept-offer/${merchantId}`, { method: 'POST' });
+        if (!res.ok) throw new Error('Request failed');
+        const data = await res.json();
+        btn.replaceWith(Object.assign(document.createElement('span'), { className: 'muted', textContent: 'Mandate Initiated' }));
+        console.log(data);
+      } catch (e) {
+        btn.disabled = false;
+        alert('Failed to accept offer');
+      }
+    }
+  </script>
+</body>
+</html>
