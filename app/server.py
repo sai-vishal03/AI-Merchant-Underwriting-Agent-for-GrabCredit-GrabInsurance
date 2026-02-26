@@ -10,8 +10,9 @@ from statistics import stdev
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field, field_validator
 
-from app.explainability import CategoryAverages
+from app.explainability import CategoryAverages, generate_underwriting_decision_trail
 from app.portfolio import generate_portfolio_summary
 from app.underwriting import generate_underwriting_decision
 
@@ -40,6 +41,31 @@ class MerchantStub:
 
     def compute_gmv_volatility(self) -> float:
         return stdev(self.monthly_gmv_12m)
+
+
+class MerchantInput(BaseModel):
+    """Validated merchant input schema for on-demand underwriting requests."""
+
+    merchant_id: str
+    category: str
+    monthly_gmv_12m: list[float] = Field(..., min_length=12, max_length=12)
+    coupon_redemption_rate: float
+    unique_customer_count: int
+    customer_return_rate: float
+    avg_order_value: float
+    seasonality_index: float
+    deal_exclusivity_rate: float
+    return_and_refund_rate: float
+
+    @field_validator("monthly_gmv_12m")
+    @classmethod
+    def validate_monthly_gmv_values(cls, values: list[float]) -> list[float]:
+        """Ensure exactly 12 non-negative monthly GMV values are provided."""
+        if len(values) != 12:
+            raise ValueError("monthly_gmv_12m must contain exactly 12 months")
+        if any(value < 0 for value in values):
+            raise ValueError("monthly_gmv_12m values must be non-negative")
+        return values
 
 
 BASELINE_CATEGORY_AVERAGES = CategoryAverages(
@@ -121,12 +147,28 @@ def dashboard_ui(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("dashboard.html", context)
 
 
+def _get_decision_by_merchant_id(merchant_id: str) -> dict | None:
+    """Return cached decision for merchant, if present."""
+    for decision in portfolio_decisions:
+        if decision.get("merchant_id") == merchant_id:
+            return decision
+    return None
+
+
 @app.post("/accept-offer/{merchant_id}")
 def accept_offer(merchant_id: str) -> dict:
     """Mark merchant offer as accepted and return mock NACH initiation payload."""
-    merchant_exists = any(decision.get("merchant_id") == merchant_id for decision in portfolio_decisions)
-    if not merchant_exists:
+    decision = _get_decision_by_merchant_id(merchant_id)
+    if decision is None:
         raise HTTPException(status_code=404, detail="Merchant not found")
+
+    offer = decision.get("offer", {})
+    decision_status = "rejected" if isinstance(offer, dict) and offer.get("status") == "REJECTED" else "approved"
+    if decision_status != "approved":
+        raise HTTPException(
+            status_code=400,
+            detail="Offer cannot be accepted because merchant was not approved",
+        )
 
     accepted_merchants.add(merchant_id)
     return {
@@ -134,3 +176,37 @@ def accept_offer(merchant_id: str) -> dict:
         "status": "mandate_initiated",
         "mandate_reference": f"MOCK-NACH-{random.randint(1000, 9999)}",
     }
+
+
+@app.post("/underwrite")
+def underwrite_merchant(payload: MerchantInput) -> dict:
+    """Run credit underwriting for an input merchant and return decision + AI explanation."""
+    try:
+        merchant = MerchantStub(**payload.model_dump())
+        decision = generate_underwriting_decision(
+            merchant=merchant,
+            mode="grab_credit",
+            category_averages=BASELINE_CATEGORY_AVERAGES,
+        )
+        trail = generate_underwriting_decision_trail(
+            merchant=merchant,
+            category_averages=BASELINE_CATEGORY_AVERAGES,
+        )
+
+        offer = decision.get("offer", {})
+        tier = offer.get("tier") if isinstance(offer, dict) else None
+
+        return {
+            **decision,
+            "tier": tier,
+            "ai_explanation": trail.get("final_explanation"),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to underwrite merchant: {exc}",
+        ) from exc
