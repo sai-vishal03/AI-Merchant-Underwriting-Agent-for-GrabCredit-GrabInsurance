@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
 from pathlib import Path
-from statistics import stdev
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -13,39 +11,13 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
+from app.demo_data import MerchantStub, build_demo_merchants, build_offer_message
 from app.explainability import CategoryAverages, generate_underwriting_decision_trail
 from app.portfolio import generate_portfolio_summary
 from app.underwriting import generate_underwriting_decision
 from app.whatsapp import WhatsAppDeliveryError, send_whatsapp_offer
 
 UnderwritingMode = Literal["grab_credit", "grab_insurance"]
-
-
-@dataclass
-class MerchantStub:
-    """In-memory merchant model compatible with underwriting protocol."""
-
-    merchant_id: str
-    category: str
-    monthly_gmv_12m: list[float]
-    coupon_redemption_rate: float
-    unique_customer_count: int
-    customer_return_rate: float
-    avg_order_value: float
-    seasonality_index: float
-    deal_exclusivity_rate: float
-    return_and_refund_rate: float
-    phone_number: str | None = None
-
-    def compute_yoy_gmv_growth(self) -> float:
-        start = self.monthly_gmv_12m[0]
-        end = self.monthly_gmv_12m[-1]
-        if start == 0:
-            raise ValueError("Cannot compute YoY growth when baseline GMV is zero")
-        return ((end - start) / start) * 100
-
-    def compute_gmv_volatility(self) -> float:
-        return stdev(self.monthly_gmv_12m)
 
 
 class MerchantInput(BaseModel):
@@ -81,20 +53,18 @@ BASELINE_CATEGORY_AVERAGES = CategoryAverages(
 )
 
 
-def build_demo_merchants() -> list[MerchantStub]:
-    """Return exactly ten diverse demo merchants for underwriting scenarios."""
-    return [
-        MerchantStub("M-FASHION-T1", "fashion", [1_000_000, 1_070_000, 1_110_000, 1_180_000, 1_240_000, 1_300_000, 1_360_000, 1_430_000, 1_500_000, 1_620_000, 1_760_000, 1_980_000], 22.0, 8_200, 74.0, 650.0, 1.25, 33.0, 2.2, "+919100000001"),
-        MerchantStub("M-PHARMA-T1", "pharma", [1_300_000, 1_360_000, 1_420_000, 1_500_000, 1_560_000, 1_620_000, 1_680_000, 1_760_000, 1_850_000, 1_960_000, 2_080_000, 2_220_000], 20.0, 9_100, 79.0, 560.0, 1.15, 28.0, 1.9, "+919100000002"),
-        MerchantStub("M-GROCERY-T2", "grocery", [1_600_000, 1_620_000, 1_610_000, 1_640_000, 1_660_000, 1_650_000, 1_670_000, 1_690_000, 1_700_000, 1_710_000, 1_720_000, 1_730_000], 36.0, 4_200, 62.0, 500.0, 1.20, 40.0, 5.1, "+919100000003"),
-        MerchantStub("M-BEAUTY-T2", "beauty", [1_100_000, 1_120_000, 1_130_000, 1_140_000, 1_160_000, 1_170_000, 1_190_000, 1_200_000, 1_210_000, 1_220_000, 1_240_000, 1_260_000], 34.0, 3_700, 60.0, 470.0, 1.45, 36.0, 4.2, "+919100000004"),
-        MerchantStub("M-EDU-T2", "education", [900_000, 910_000, 930_000, 940_000, 960_000, 980_000, 990_000, 1_020_000, 1_030_000, 1_050_000, 1_070_000, 1_090_000], 31.0, 3_000, 61.0, 420.0, 2.30, 34.0, 4.0, "+919100000005"),
-        MerchantStub("M-ELEC-T3", "electronics", [15_000_000, 14_800_000, 14_900_000, 14_700_000, 14_850_000, 14_650_000, 14_900_000, 14_600_000, 14_820_000, 14_640_000, 14_780_000, 14_600_000], 52.0, 30_000, 51.0, 2_100.0, 1.70, 45.0, 6.2, "+919100000006"),
-        MerchantStub("M-FOOD-T3", "food", [1_500_000, 1_350_000, 1_300_000, 1_400_000, 1_480_000, 1_520_000, 1_800_000, 1_950_000, 1_900_000, 1_420_000, 1_360_000, 1_330_000], 47.0, 5_800, 56.0, 780.0, 2.60, 41.0, 5.9, "+919100000007"),
-        MerchantStub("M-TRAVEL-T3", "travel", [2_500_000, 2_420_000, 2_360_000, 2_300_000, 2_240_000, 2_180_000, 2_140_000, 2_100_000, 2_060_000, 2_020_000, 1_980_000, 1_940_000], 40.0, 3_300, 49.0, 980.0, 2.20, 38.0, 4.6, "+919100000008"),
-        MerchantStub("M-HOME-REJ", "home_decor", [2_200_000, 2_170_000, 2_150_000, 2_120_000, 2_100_000, 2_080_000, 2_050_000, 2_030_000, 2_010_000, 1_990_000, 1_970_000, 1_950_000], 49.0, 2_500, 50.0, 690.0, 1.90, 42.0, 8.8, "+919100000009"),
-        MerchantStub("M-EVENT-REJ", "events", [450_000, 480_000, 470_000, 500_000, 520_000, 490_000, 2_000_000, 2_200_000, 2_050_000, 530_000, 500_000, 470_000], 58.0, 1_700, 54.0, 1_250.0, 4.10, 48.0, 4.3, "+919100000010"),
-    ]
+app = FastAPI(title="Merchant Underwriting Dashboard API")
+
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
+merchants = build_demo_merchants()
+portfolio_decisions_by_mode: dict[UnderwritingMode, list[dict]] = {
+    "grab_credit": [],
+    "grab_insurance": [],
+}
+accepted_merchants_by_mode: dict[UnderwritingMode, set[str]] = {
+    "grab_credit": set(),
+    "grab_insurance": set(),
+}
 
 
 def _build_decision_payload(merchant: MerchantStub, mode: UnderwritingMode) -> dict:
@@ -124,65 +94,20 @@ def _load_portfolio_decisions(mode: UnderwritingMode) -> list[dict]:
     return [_build_decision_payload(merchant, mode=mode) for merchant in merchants]
 
 
+def _get_decisions(mode: UnderwritingMode, refresh: bool = False) -> list[dict]:
+    """Get mode-specific decision cache, optionally refreshing it."""
+    if refresh or not portfolio_decisions_by_mode[mode]:
+        portfolio_decisions_by_mode[mode] = _load_portfolio_decisions(mode)
+    return portfolio_decisions_by_mode[mode]
+
+
 def _find_merchant(merchant_id: str) -> MerchantStub | None:
-    for merchant in merchants:
-        if merchant.merchant_id == merchant_id:
-            return merchant
-    return None
+    return next((merchant for merchant in merchants if merchant.merchant_id == merchant_id), None)
 
 
-def _find_decision(merchant_id: str) -> dict | None:
-    for decision in portfolio_decisions:
-        if decision.get("merchant_id") == merchant_id:
-            return decision
-    return None
-
-
-def build_offer_message(decision: dict, ai_explanation: str) -> str:
-    """Build mode-aware WhatsApp message content from decision payload."""
-    offer = decision.get("offer", {})
-    mode = offer.get("mode", "grab_credit")
-    tier = offer.get("tier", "N/A")
-    confidence_level = decision.get("confidence_level", "N/A")
-
-    if mode == "grab_insurance":
-        mode_block = (
-            "GrabInsurance Offer Ready\n"
-            f"Coverage: ₹{offer.get('coverage_amount_lakhs')} L\n"
-            f"Premium: {offer.get('premium_quote_pct')}% p.a.\n"
-            f"Policy: {offer.get('policy_type')}"
-        )
-    else:
-        mode_block = (
-            "GrabCredit Offer Approved\n"
-            f"Tier: {tier}\n"
-            f"Limit: ₹{offer.get('credit_limit_lakhs')} L\n"
-            f"Rate: {offer.get('interest_rate_pct')}%"
-        )
-
-    return (
-        f"{mode_block}\n"
-        f"Confidence: {confidence_level}\n\n"
-        f"Explanation: {ai_explanation}\n\n"
-        "Reply YES to accept or visit dashboard"
-    )
-
-
-app = FastAPI(title="Merchant Underwriting Dashboard API")
-
-templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
-merchants = build_demo_merchants()
-portfolio_decisions: list[dict] = []
-active_mode: UnderwritingMode = "grab_credit"
-accepted_merchants: set[str] = set()
-
-
-@app.on_event("startup")
-def startup_load_decisions() -> None:
-    """Generate and cache credit decisions at service startup."""
-    global portfolio_decisions, active_mode
-    active_mode = "grab_credit"
-    portfolio_decisions = _load_portfolio_decisions(active_mode)
+def _find_decision(merchant_id: str, mode: UnderwritingMode) -> dict | None:
+    decisions = _get_decisions(mode)
+    return next((decision for decision in decisions if decision.get("merchant_id") == merchant_id), None)
 
 
 def _dashboard_merchant_item(decision: dict, mode: UnderwritingMode) -> dict:
@@ -207,23 +132,45 @@ def _dashboard_merchant_item(decision: dict, mode: UnderwritingMode) -> dict:
         "premium_quote_pct": None if rejected else offer.get("premium_quote_pct"),
         "policy_type": None if rejected else offer.get("policy_type"),
         "rejection_reason": offer.get("rejection_reason") if rejected else None,
-        "accepted": merchant_id in accepted_merchants,
+        "accepted": merchant_id in accepted_merchants_by_mode[mode],
         "offer_sent": bool(decision.get("offer_sent", False)),
         "primary_risk_drivers": decision.get("primary_risk_drivers", []),
         "primary_strengths": decision.get("primary_strengths", []),
         "ai_explanation_full": decision.get("ai_explanation", ""),
         "decision_metrics": offer.get("decision_metrics", {}),
-        "underwriting_mode": mode,
         "tier_class": (
             "tier-1" if tier == "Tier 1" else "tier-2" if tier == "Tier 2" else "tier-3" if tier == "Tier 3" else "rejected"
         ),
     }
 
 
+@app.on_event("startup")
+def startup_load_decisions() -> None:
+    """Generate and cache portfolio decisions for all supported modes."""
+    for mode in ("grab_credit", "grab_insurance"):
+        _get_decisions(mode, refresh=True)
+
+
+@app.get("/health")
+def health() -> dict:
+    """Simple health endpoint for deployment and smoke checks."""
+    return {"status": "ok", "merchants": len(merchants)}
+
+
+@app.post("/refresh-decisions")
+def refresh_decisions(mode: UnderwritingMode | None = Query(None)) -> dict:
+    """Refresh cached underwriting decisions for one mode or all modes."""
+    modes = [mode] if mode is not None else ["grab_credit", "grab_insurance"]
+    refreshed: dict[str, int] = {}
+    for current_mode in modes:
+        refreshed[current_mode] = len(_get_decisions(current_mode, refresh=True))
+    return {"status": "refreshed", "modes": refreshed}
+
+
 @app.get("/dashboard")
 def get_dashboard(mode: UnderwritingMode = Query("grab_credit")) -> dict:
     """Return portfolio summary and merchant-level dashboard rows."""
-    decisions = portfolio_decisions if mode == active_mode else _load_portfolio_decisions(mode)
+    decisions = _get_decisions(mode)
     return {
         "mode": mode,
         "portfolio_summary": generate_portfolio_summary(decisions),
@@ -231,10 +178,30 @@ def get_dashboard(mode: UnderwritingMode = Query("grab_credit")) -> dict:
     }
 
 
+@app.get("/decision-trail/{merchant_id}")
+def get_decision_trail(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")) -> dict:
+    """Return full cached decision and explainability trail for one merchant."""
+    decision = _find_decision(merchant_id, mode)
+    if decision is None:
+        raise HTTPException(status_code=404, detail="Merchant not found")
+    return {
+        "mode": mode,
+        "merchant_id": merchant_id,
+        "offer_sent": bool(decision.get("offer_sent", False)),
+        "accepted": merchant_id in accepted_merchants_by_mode[mode],
+        "confidence_level": decision.get("confidence_level"),
+        "confidence_score": decision.get("confidence_score"),
+        "primary_risk_drivers": decision.get("primary_risk_drivers", []),
+        "primary_strengths": decision.get("primary_strengths", []),
+        "ai_explanation": decision.get("ai_explanation", ""),
+        "offer": decision.get("offer", {}),
+    }
+
+
 @app.get("/ui", response_class=HTMLResponse)
 def dashboard_ui(request: Request, mode: UnderwritingMode = Query("grab_credit")) -> HTMLResponse:
     """Render simple HTML dashboard."""
-    decisions = portfolio_decisions if mode == active_mode else _load_portfolio_decisions(mode)
+    decisions = _get_decisions(mode)
     context = {
         "request": request,
         "mode": mode,
@@ -245,13 +212,13 @@ def dashboard_ui(request: Request, mode: UnderwritingMode = Query("grab_credit")
 
 
 @app.post("/send-offer/{merchant_id}")
-def send_offer(merchant_id: str) -> dict:
+def send_offer(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")) -> dict:
     """Send approved offer via WhatsApp using mode-aware message formatting."""
-    decision = _find_decision(merchant_id)
+    decision = _find_decision(merchant_id, mode)
     if decision is None:
         raise HTTPException(status_code=404, detail="Merchant not found")
 
-    if merchant_id in accepted_merchants:
+    if merchant_id in accepted_merchants_by_mode[mode]:
         raise HTTPException(status_code=409, detail="Already accepted")
 
     offer = decision.get("offer", {})
@@ -292,9 +259,9 @@ def send_offer(merchant_id: str) -> dict:
 
 
 @app.post("/accept-offer/{merchant_id}")
-def accept_offer(merchant_id: str) -> dict:
+def accept_offer(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")) -> dict:
     """Mark merchant offer as accepted and return mock NACH initiation payload."""
-    decision = _find_decision(merchant_id)
+    decision = _find_decision(merchant_id, mode)
     if decision is None:
         raise HTTPException(status_code=404, detail="Merchant not found")
 
@@ -312,7 +279,7 @@ def accept_offer(merchant_id: str) -> dict:
             detail="Offer must be sent on WhatsApp before acceptance",
         )
 
-    accepted_merchants.add(merchant_id)
+    accepted_merchants_by_mode[mode].add(merchant_id)
     return {
         "merchant_id": merchant_id,
         "status": "mandate_initiated",
@@ -344,6 +311,9 @@ def underwrite_merchant(payload: MerchantInput, mode: UnderwritingMode = Query("
             "tier": tier,
             "mode": mode,
             "ai_explanation": trail.get("final_explanation"),
+            "primary_risk_drivers": trail.get("primary_risk_drivers", []),
+            "primary_strengths": trail.get("primary_strengths", []),
+            "confidence_score": trail.get("confidence_score", 0.0),
         }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

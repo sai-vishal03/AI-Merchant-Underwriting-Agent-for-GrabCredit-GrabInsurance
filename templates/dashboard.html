@@ -191,6 +191,8 @@
   </div>
 
   <script>
+    const DASHBOARD_MODE = {{ mode | tojson }};
+
     function setSentState(merchantId, sent) {
       const sentEl = document.getElementById(`sent-status-${merchantId}`);
       if (sentEl) sentEl.textContent = sent ? 'Yes' : 'No';
@@ -205,7 +207,7 @@
       btn.textContent = 'Sending...';
 
       try {
-        const res = await fetch(`/send-offer/${merchantId}`, {
+        const res = await fetch(`/send-offer/${merchantId}?mode=${DASHBOARD_MODE}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -235,7 +237,7 @@
       btn.textContent = 'Submitting...';
 
       try {
-        const res = await fetch(`/accept-offer/${merchantId}`, { method: 'POST' });
+        const res = await fetch(`/accept-offer/${merchantId}?mode=${DASHBOARD_MODE}`, { method: 'POST' });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.detail || 'Failed to accept offer');
         btn.textContent = 'Accepted';

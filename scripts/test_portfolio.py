@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from app.explainability import CategoryAverages, generate_underwriting_decision_trail
 from app.portfolio import generate_portfolio_summary
-from app.server import MerchantStub, build_demo_merchants, build_offer_message
+from app.demo_data import build_demo_merchants, build_offer_message
 from app.underwriting import generate_underwriting_decision
 
 
