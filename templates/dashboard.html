@@ -6,188 +6,344 @@
   <title>Merchant Underwriting Dashboard</title>
   <style>
     :root {
-      --ok: #168a42;
-      --warn: #b07200;
-      --risk: #cf6b00;
-      --bad: #c62828;
-      --muted: #6a6f76;
-      --line: #e3e6ea;
-      --bg: #f6f8fb;
+      --ok: #15803d;
+      --warn: #b45309;
+      --risk: #c2410c;
+      --bad: #b91c1c;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --bg: #f8fafc;
       --card: #ffffff;
+      --brand: #0f62fe;
+      --brand-soft: #dbeafe;
+      --text: #0f172a;
     }
-    body { font-family: Inter, Arial, sans-serif; margin: 20px; background: var(--bg); color: #1f2937; }
-    h1 { margin: 0 0 16px; }
-    .summary { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-    .label { font-size: 12px; color: var(--muted); }
-    .value { font-size: 20px; font-weight: 700; margin-top: 6px; }
 
-    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
-    table { width: 100%; border-collapse: collapse; min-width: 1400px; }
-    th, td { padding: 10px 12px; border-bottom: 1px solid #eef0f3; text-align: left; vertical-align: top; }
-    th { background: #fafbfd; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; color: #4b5563; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0;
+      background: radial-gradient(circle at top right, #eff6ff, var(--bg) 40%);
+      color: var(--text);
+      padding: 22px;
+    }
+
+    .shell { max-width: 1400px; margin: 0 auto; }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .title-wrap h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
+    .subtitle { margin-top: 6px; color: var(--muted); font-size: 14px; }
+
+    .mode-toggle {
+      display: inline-flex;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--card);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .mode-toggle a {
+      text-decoration: none;
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      color: #0f172a;
+      border: 1px solid transparent;
+    }
+
+    .mode-toggle a.active {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+    }
+
+    .label { font-size: 12px; color: var(--muted); }
+    .value { font-size: 24px; font-weight: 700; margin-top: 6px; }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--card);
+      box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
+    }
+
+    table { width: 100%; border-collapse: collapse; min-width: 1450px; }
+    th, td { padding: 12px; border-bottom: 1px solid #eef2f7; text-align: left; vertical-align: top; }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f8fbff;
+      z-index: 1;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #475569;
+    }
+
+    .id-cell strong { font-size: 13px; }
+    .muted { color: var(--muted); font-size: 12px; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid;
+    }
+    .pill.approved { color: var(--ok); background: #ecfdf3; border-color: #bbf7d0; }
+    .pill.rejected { color: var(--bad); background: #fef2f2; border-color: #fecaca; }
+    .pill.mode { color: #1e40af; background: #eef2ff; border-color: #c7d2fe; }
 
     .tier-1 { color: var(--ok); font-weight: 700; }
     .tier-2 { color: var(--warn); font-weight: 700; }
     .tier-3 { color: var(--risk); font-weight: 700; }
-    .status-approved { color: var(--ok); font-weight: 700; }
-    .status-rejected { color: var(--bad); font-weight: 700; }
 
-    .badge-rejected {
-      display: inline-block; padding: 2px 8px; border-radius: 999px;
-      font-size: 12px; background: #fde8e8; color: var(--bad); border: 1px solid #f5c2c2;
-      cursor: help;
+    .confidence {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 120px;
+    }
+    .confidence-bar {
+      height: 7px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+    }
+    .confidence-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #f59e0b, #22c55e);
     }
 
     .btn {
-      padding: 6px 10px; border: 1px solid #cfd5dd; border-radius: 6px;
-      background: #fff; cursor: pointer; font-size: 12px;
+      padding: 7px 11px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #fff;
     }
     .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
-    .btn-primary { background: #0f62fe; color: #fff; border-color: #0f62fe; }
-    .btn-success { background: #168a42; color: #fff; border-color: #168a42; }
-    .muted { color: var(--muted); font-size: 12px; }
-    .stack { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+    .btn-success { background: #15803d; border-color: #15803d; color: #fff; }
 
-    details { background: #fbfcfe; border: 1px solid #ecf0f4; border-radius: 8px; padding: 8px 10px; }
+    .stack { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+    details {
+      background: #fcfdff;
+      border: 1px solid #e7edf6;
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
     summary { cursor: pointer; font-weight: 600; }
-    .detail-grid { margin-top: 8px; display: grid; gap: 8px; }
+    .detail-grid { margin-top: 10px; display: grid; gap: 10px; }
     .kv { font-size: 13px; }
     .ai-block {
-      white-space: pre-wrap; background: #fff; border: 1px solid #e7ebf0;
-      border-radius: 8px; padding: 10px; line-height: 1.35;
+      white-space: pre-wrap;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px;
+      line-height: 1.4;
+      font-size: 13px;
     }
-    ul.inline-list { margin: 4px 0 0 16px; padding: 0; }
+    ul.inline-list { margin: 4px 0 0 18px; padding: 0; }
+
+    .stat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #dbeafe;
+      background: var(--brand-soft);
+      color: #1e3a8a;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    @media (max-width: 920px) {
+      .summary { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      .hero { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
-  <h1>Merchant Underwriting Dashboard</h1>
+  <div class="shell">
+    <header class="hero">
+      <div class="title-wrap">
+        <h1>Merchant Underwriting Dashboard</h1>
+        <div class="subtitle">Explainable decisions, mode-aware offer operations, and decision-trail visibility.</div>
+      </div>
+      <div>
+        <div class="mode-toggle">
+          <a href="/ui?mode=grab_credit" class="{{ 'active' if mode == 'grab_credit' else '' }}">GrabCredit</a>
+          <a href="/ui?mode=grab_insurance" class="{{ 'active' if mode == 'grab_insurance' else '' }}">GrabInsurance</a>
+        </div>
+      </div>
+    </header>
 
-  <section class="summary">
-    <div class="card"><div class="label">Total Merchants</div><div class="value">{{ portfolio_summary.total_merchants }}</div></div>
-    <div class="card"><div class="label">Approved</div><div class="value">{{ portfolio_summary.total_approved }}</div></div>
-    <div class="card"><div class="label">Rejected</div><div class="value">{{ portfolio_summary.total_rejected }}</div></div>
-    <div class="card"><div class="label">Rejection Rate %</div><div class="value">{{ portfolio_summary.rejection_rate_percentage }}</div></div>
-    <div class="card"><div class="label">Credit Exposure (L)</div><div class="value">{{ portfolio_summary.total_credit_exposure_lakhs }}</div></div>
-  </section>
+    <section class="summary">
+      <div class="card"><div class="label">Total Merchants</div><div class="value">{{ portfolio_summary.total_merchants }}</div></div>
+      <div class="card"><div class="label">Approved</div><div class="value">{{ portfolio_summary.total_approved }}</div></div>
+      <div class="card"><div class="label">Rejected</div><div class="value">{{ portfolio_summary.total_rejected }}</div></div>
+      <div class="card"><div class="label">Rejection Rate %</div><div class="value">{{ portfolio_summary.rejection_rate_percentage }}</div></div>
+      <div class="card"><div class="label">Credit Exposure (L)</div><div class="value">{{ portfolio_summary.total_credit_exposure_lakhs }}</div></div>
+    </section>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Merchant ID</th>
-          <th>Category</th>
-          <th>Mode</th>
-          <th>Status</th>
-          <th>Tier</th>
-          <th>Offer Details</th>
-          <th>Confidence</th>
-          <th>Offer Sent?</th>
-          <th>Actions</th>
-          <th>Decision Trail</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for m in merchants %}
-        <tr id="row-{{ m.merchant_id }}">
-          <td>
-            <div><strong>{{ m.merchant_id }}</strong></div>
-            <div class="muted">{{ m.phone_number or '-' }}</div>
-          </td>
-          <td>{{ m.category or '-' }}</td>
-          <td>{{ 'Credit' if m.mode == 'grab_credit' else 'Insurance' }}</td>
-          <td>
-            {% if m.status == 'approved' %}
-              <span class="status-approved">Approved</span>
-            {% else %}
-              <span class="badge-rejected" title="{{ m.rejection_reason or 'Rejected by policy checks' }}">Rejected</span>
-            {% endif %}
-          </td>
-          <td class="{{ m.tier_class }}">{{ m.tier or '-' }}</td>
-          <td>
-            {% if m.mode == 'grab_credit' and m.status == 'approved' %}
-              <div>Credit Limit: ₹{{ m.credit_limit_lakhs }} L</div>
-              <div>Rate: {{ m.interest_rate_pct }}%</div>
-            {% elif m.mode == 'grab_insurance' and m.status == 'approved' %}
-              <div>Coverage: ₹{{ m.coverage_amount_lakhs }} L</div>
-              <div>Premium: {{ m.premium_quote_pct }}%</div>
-              <div>Policy: {{ m.policy_type }}</div>
-            {% else %}
-              <span class="muted">-</span>
-            {% endif %}
-          </td>
-          <td>
-            <div>{{ m.confidence_level }}</div>
-            <div class="muted">{{ m.confidence_score }}%</div>
-          </td>
-          <td>
-            <span id="sent-status-{{ m.merchant_id }}">{{ 'Yes' if m.offer_sent else 'No' }}</span>
-          </td>
-          <td>
-            <div class="stack">
-              {% if m.status == 'approved' and not m.offer_sent %}
-                <button
-                  id="send-btn-{{ m.merchant_id }}"
-                  class="btn btn-primary"
-                  onclick="sendOffer('{{ m.merchant_id }}')"
-                >Send WhatsApp Offer</button>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Merchant</th>
+            <th>Category</th>
+            <th>Mode</th>
+            <th>Status</th>
+            <th>Tier</th>
+            <th>Offer Details</th>
+            <th>Confidence</th>
+            <th>Offer Sent?</th>
+            <th>Actions</th>
+            <th>Decision Trail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in merchants %}
+          <tr id="row-{{ m.merchant_id }}">
+            <td class="id-cell">
+              <strong>{{ m.merchant_id }}</strong>
+              <div class="muted">{{ m.phone_number or '-' }}</div>
+            </td>
+            <td>{{ m.category or '-' }}</td>
+            <td>
+              <span class="pill mode">{{ 'Credit' if m.mode == 'grab_credit' else 'Insurance' }}</span>
+            </td>
+            <td>
+              {% if m.status == 'approved' %}
+                <span class="pill approved">Approved</span>
               {% else %}
-                <span class="muted">{{ 'Sent' if m.offer_sent else 'N/A' }}</span>
+                <span class="pill rejected" title="{{ m.rejection_reason or 'Rejected by policy checks' }}">Rejected</span>
               {% endif %}
-
-              {% if m.status == 'approved' and m.offer_sent and not m.accepted %}
-                <button
-                  id="accept-btn-{{ m.merchant_id }}"
-                  class="btn btn-success"
-                  onclick="acceptOffer('{{ m.merchant_id }}')"
-                >Accept Offer</button>
-              {% elif m.accepted %}
-                <span class="muted">Mandate Initiated</span>
+            </td>
+            <td class="{{ m.tier_class }}">{{ m.tier or '-' }}</td>
+            <td>
+              {% if m.mode == 'grab_credit' and m.status == 'approved' %}
+                <div>Credit Limit: ₹{{ m.credit_limit_lakhs }} L</div>
+                <div>Rate: {{ m.interest_rate_pct }}%</div>
+              {% elif m.mode == 'grab_insurance' and m.status == 'approved' %}
+                <div>Coverage: ₹{{ m.coverage_amount_lakhs }} L</div>
+                <div>Premium: {{ m.premium_quote_pct }}%</div>
+                <div>Policy: {{ m.policy_type }}</div>
               {% else %}
-                <span class="muted">Awaiting send</span>
+                <span class="muted">-</span>
               {% endif %}
-            </div>
-          </td>
-          <td>
-            <details>
-              <summary>View details</summary>
-              <div class="detail-grid">
-                <div class="kv"><strong>AI Explanation</strong></div>
-                <div class="ai-block">{{ m.ai_explanation_full or 'No explanation available.' }}</div>
-
-                <div class="kv"><strong>Primary Risk Drivers</strong></div>
-                {% if m.primary_risk_drivers %}
-                  <ul class="inline-list">
-                    {% for item in m.primary_risk_drivers %}<li>{{ item }}</li>{% endfor %}
-                  </ul>
-                {% else %}
-                  <div class="muted">No primary risk drivers captured.</div>
-                {% endif %}
-
-                <div class="kv"><strong>Primary Strengths</strong></div>
-                {% if m.primary_strengths %}
-                  <ul class="inline-list">
-                    {% for item in m.primary_strengths %}<li>{{ item }}</li>{% endfor %}
-                  </ul>
-                {% else %}
-                  <div class="muted">No primary strengths captured.</div>
-                {% endif %}
-
-                <div class="kv"><strong>Key Metrics</strong></div>
-                <div class="muted">
-                  YoY Growth: {{ m.decision_metrics.get('yoy_gmv_growth_pct', '-') }}% |
-                  Refund: {{ m.decision_metrics.get('refund_rate_pct', '-') }}% |
-                  Category Avg Refund: {{ m.decision_metrics.get('category_avg_refund_rate_pct', '-') }}% |
-                  Customer Return: {{ m.decision_metrics.get('customer_return_rate_pct', '-') }}% |
-                  Seasonality: {{ m.decision_metrics.get('seasonality_index', '-') }}
-                </div>
+            </td>
+            <td>
+              <div class="confidence">
+                <div>{{ m.confidence_level }}</div>
+                <div class="confidence-bar"><div class="confidence-fill" style="width: {{ m.confidence_score }}%;"></div></div>
+                <div class="muted">{{ m.confidence_score }}%</div>
               </div>
-            </details>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+            </td>
+            <td>
+              <span id="sent-status-{{ m.merchant_id }}" class="stat-chip">{{ 'Yes' if m.offer_sent else 'No' }}</span>
+            </td>
+            <td>
+              <div class="stack">
+                {% if m.status == 'approved' and not m.offer_sent %}
+                  <button
+                    id="send-btn-{{ m.merchant_id }}"
+                    class="btn btn-primary"
+                    onclick="sendOffer('{{ m.merchant_id }}')"
+                  >Send WhatsApp Offer</button>
+                {% else %}
+                  <span class="muted">{{ 'Sent' if m.offer_sent else 'N/A' }}</span>
+                {% endif %}
+
+                {% if m.status == 'approved' and m.offer_sent and not m.accepted %}
+                  <button
+                    id="accept-btn-{{ m.merchant_id }}"
+                    class="btn btn-success"
+                    onclick="acceptOffer('{{ m.merchant_id }}')"
+                  >Accept Offer</button>
+                {% elif m.accepted %}
+                  <span class="muted">Mandate Initiated</span>
+                {% else %}
+                  <span class="muted">Awaiting send</span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <details>
+                <summary>View details</summary>
+                <div class="detail-grid">
+                  <div class="kv"><strong>AI Explanation</strong></div>
+                  <div class="ai-block">{{ m.ai_explanation_full or 'No explanation available.' }}</div>
+
+                  <div class="kv"><strong>Primary Risk Drivers</strong></div>
+                  {% if m.primary_risk_drivers %}
+                    <ul class="inline-list">
+                      {% for item in m.primary_risk_drivers %}<li>{{ item }}</li>{% endfor %}
+                    </ul>
+                  {% else %}
+                    <div class="muted">No primary risk drivers captured.</div>
+                  {% endif %}
+
+                  <div class="kv"><strong>Primary Strengths</strong></div>
+                  {% if m.primary_strengths %}
+                    <ul class="inline-list">
+                      {% for item in m.primary_strengths %}<li>{{ item }}</li>{% endfor %}
+                    </ul>
+                  {% else %}
+                    <div class="muted">No primary strengths captured.</div>
+                  {% endif %}
+
+                  <div class="kv"><strong>Key Metrics</strong></div>
+                  <div class="muted">
+                    YoY Growth: {{ m.decision_metrics.get('yoy_gmv_growth_pct', '-') }}% |
+                    Refund: {{ m.decision_metrics.get('refund_rate_pct', '-') }}% |
+                    Category Avg Refund: {{ m.decision_metrics.get('category_avg_refund_rate_pct', '-') }}% |
+                    Customer Return: {{ m.decision_metrics.get('customer_return_rate_pct', '-') }}% |
+                    Seasonality: {{ m.decision_metrics.get('seasonality_index', '-') }}
+                  </div>
+                </div>
+              </details>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <script>
