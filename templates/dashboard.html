@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Merchant Underwriting Dashboard</title>
+  <style>
+    :root {
+      --ok: #168a42;
+      --warn: #b07200;
+      --risk: #cf6b00;
+      --bad: #c62828;
+      --muted: #6a6f76;
+      --line: #e3e6ea;
+      --bg: #f6f8fb;
+      --card: #ffffff;
+    }
+    body { font-family: Inter, Arial, sans-serif; margin: 20px; background: var(--bg); color: #1f2937; }
+    h1 { margin: 0 0 16px; }
+    .summary { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+    .label { font-size: 12px; color: var(--muted); }
+    .value { font-size: 20px; font-weight: 700; margin-top: 6px; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+    table { width: 100%; border-collapse: collapse; min-width: 1400px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #eef0f3; text-align: left; vertical-align: top; }
+    th { background: #fafbfd; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; color: #4b5563; }
+
+    .tier-1 { color: var(--ok); font-weight: 700; }
+    .tier-2 { color: var(--warn); font-weight: 700; }
+    .tier-3 { color: var(--risk); font-weight: 700; }
+    .status-approved { color: var(--ok); font-weight: 700; }
+    .status-rejected { color: var(--bad); font-weight: 700; }
+
+    .badge-rejected {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 12px; background: #fde8e8; color: var(--bad); border: 1px solid #f5c2c2;
+      cursor: help;
+    }
+
+    .btn {
+      padding: 6px 10px; border: 1px solid #cfd5dd; border-radius: 6px;
+      background: #fff; cursor: pointer; font-size: 12px;
+    }
+    .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .btn-primary { background: #0f62fe; color: #fff; border-color: #0f62fe; }
+    .btn-success { background: #168a42; color: #fff; border-color: #168a42; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .stack { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+    details { background: #fbfcfe; border: 1px solid #ecf0f4; border-radius: 8px; padding: 8px 10px; }
+    summary { cursor: pointer; font-weight: 600; }
+    .detail-grid { margin-top: 8px; display: grid; gap: 8px; }
+    .kv { font-size: 13px; }
+    .ai-block {
+      white-space: pre-wrap; background: #fff; border: 1px solid #e7ebf0;
+      border-radius: 8px; padding: 10px; line-height: 1.35;
+    }
+    ul.inline-list { margin: 4px 0 0 16px; padding: 0; }
+  </style>
+</head>
+<body>
+  <h1>Merchant Underwriting Dashboard</h1>
+
+  <section class="summary">
+    <div class="card"><div class="label">Total Merchants</div><div class="value">{{ portfolio_summary.total_merchants }}</div></div>
+    <div class="card"><div class="label">Approved</div><div class="value">{{ portfolio_summary.total_approved }}</div></div>
+    <div class="card"><div class="label">Rejected</div><div class="value">{{ portfolio_summary.total_rejected }}</div></div>
+    <div class="card"><div class="label">Rejection Rate %</div><div class="value">{{ portfolio_summary.rejection_rate_percentage }}</div></div>
+    <div class="card"><div class="label">Credit Exposure (L)</div><div class="value">{{ portfolio_summary.total_credit_exposure_lakhs }}</div></div>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Merchant ID</th>
+          <th>Category</th>
+          <th>Mode</th>
+          <th>Status</th>
+          <th>Tier</th>
+          <th>Offer Details</th>
+          <th>Confidence</th>
+          <th>Offer Sent?</th>
+          <th>Actions</th>
+          <th>Decision Trail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in merchants %}
+        <tr id="row-{{ m.merchant_id }}">
+          <td>
+            <div><strong>{{ m.merchant_id }}</strong></div>
+            <div class="muted">{{ m.phone_number or '-' }}</div>
+          </td>
+          <td>{{ m.category or '-' }}</td>
+          <td>{{ 'Credit' if m.mode == 'grab_credit' else 'Insurance' }}</td>
+          <td>
+            {% if m.status == 'approved' %}
+              <span class="status-approved">Approved</span>
+            {% else %}
+              <span class="badge-rejected" title="{{ m.rejection_reason or 'Rejected by policy checks' }}">Rejected</span>
+            {% endif %}
+          </td>
+          <td class="{{ m.tier_class }}">{{ m.tier or '-' }}</td>
+          <td>
+            {% if m.mode == 'grab_credit' and m.status == 'approved' %}
+              <div>Credit Limit: ₹{{ m.credit_limit_lakhs }} L</div>
+              <div>Rate: {{ m.interest_rate_pct }}%</div>
+            {% elif m.mode == 'grab_insurance' and m.status == 'approved' %}
+              <div>Coverage: ₹{{ m.coverage_amount_lakhs }} L</div>
+              <div>Premium: {{ m.premium_quote_pct }}%</div>
+              <div>Policy: {{ m.policy_type }}</div>
+            {% else %}
+              <span class="muted">-</span>
+            {% endif %}
+          </td>
+          <td>
+            <div>{{ m.confidence_level }}</div>
+            <div class="muted">{{ m.confidence_score }}%</div>
+          </td>
+          <td>
+            <span id="sent-status-{{ m.merchant_id }}">{{ 'Yes' if m.offer_sent else 'No' }}</span>
+          </td>
+          <td>
+            <div class="stack">
+              {% if m.status == 'approved' and not m.offer_sent %}
+                <button
+                  id="send-btn-{{ m.merchant_id }}"
+                  class="btn btn-primary"
+                  onclick="sendOffer('{{ m.merchant_id }}')"
+                >Send WhatsApp Offer</button>
+              {% else %}
+                <span class="muted">{{ 'Sent' if m.offer_sent else 'N/A' }}</span>
+              {% endif %}
+
+              {% if m.status == 'approved' and m.offer_sent and not m.accepted %}
+                <button
+                  id="accept-btn-{{ m.merchant_id }}"
+                  class="btn btn-success"
+                  onclick="acceptOffer('{{ m.merchant_id }}')"
+                >Accept Offer</button>
+              {% elif m.accepted %}
+                <span class="muted">Mandate Initiated</span>
+              {% else %}
+                <span class="muted">Awaiting send</span>
+              {% endif %}
+            </div>
+          </td>
+          <td>
+            <details>
+              <summary>View details</summary>
+              <div class="detail-grid">
+                <div class="kv"><strong>AI Explanation</strong></div>
+                <div class="ai-block">{{ m.ai_explanation_full or 'No explanation available.' }}</div>
+
+                <div class="kv"><strong>Primary Risk Drivers</strong></div>
+                {% if m.primary_risk_drivers %}
+                  <ul class="inline-list">
+                    {% for item in m.primary_risk_drivers %}<li>{{ item }}</li>{% endfor %}
+                  </ul>
+                {% else %}
+                  <div class="muted">No primary risk drivers captured.</div>
+                {% endif %}
+
+                <div class="kv"><strong>Primary Strengths</strong></div>
+                {% if m.primary_strengths %}
+                  <ul class="inline-list">
+                    {% for item in m.primary_strengths %}<li>{{ item }}</li>{% endfor %}
+                  </ul>
+                {% else %}
+                  <div class="muted">No primary strengths captured.</div>
+                {% endif %}
+
+                <div class="kv"><strong>Key Metrics</strong></div>
+                <div class="muted">
+                  YoY Growth: {{ m.decision_metrics.get('yoy_gmv_growth_pct', '-') }}% |
+                  Refund: {{ m.decision_metrics.get('refund_rate_pct', '-') }}% |
+                  Category Avg Refund: {{ m.decision_metrics.get('category_avg_refund_rate_pct', '-') }}% |
+                  Customer Return: {{ m.decision_metrics.get('customer_return_rate_pct', '-') }}% |
+                  Seasonality: {{ m.decision_metrics.get('seasonality_index', '-') }}
+                </div>
+              </div>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    function setSentState(merchantId, sent) {
+      const sentEl = document.getElementById(`sent-status-${merchantId}`);
+      if (sentEl) sentEl.textContent = sent ? 'Yes' : 'No';
+    }
+
+    async function sendOffer(merchantId) {
+      const btn = document.getElementById(`send-btn-${merchantId}`);
+      if (!btn) return;
+
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        const res = await fetch(`/send-offer/${merchantId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+
+        if (!res.ok || data.status !== 'sent') {
+          const msg = data?.detail || data?.delivery_info?.reason || 'Failed to send offer';
+          throw new Error(msg);
+        }
+
+        setSentState(merchantId, true);
+        btn.textContent = 'Sent';
+        btn.classList.remove('btn-primary');
+      } catch (error) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        alert(`Failed to send WhatsApp offer: ${error.message}`);
+      }
+    }
+
+    async function acceptOffer(merchantId) {
+      const btn = document.getElementById(`accept-btn-${merchantId}`);
+      if (!btn) return;
+
+      btn.disabled = true;
+      const originalText = btn.textContent;
+      btn.textContent = 'Submitting...';
+
+      try {
+        const res = await fetch(`/accept-offer/${merchantId}`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || 'Failed to accept offer');
+        btn.textContent = 'Accepted';
+      } catch (error) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        alert(`Failed to accept offer: ${error.message}`);
+      }
+    }
+  </script>
+</body>
+</html>
