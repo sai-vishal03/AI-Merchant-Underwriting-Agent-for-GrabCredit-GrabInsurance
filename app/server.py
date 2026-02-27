@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import random
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -22,7 +21,7 @@ UnderwritingMode = Literal["grab_credit", "grab_insurance"]
 
 
 class MerchantInput(BaseModel):
-    """Validated merchant input schema for on-demand underwriting requests."""
+    """Validated merchant payload schema for on-demand underwriting requests."""
 
     merchant_id: str
     category: str
@@ -34,17 +33,32 @@ class MerchantInput(BaseModel):
     seasonality_index: float
     deal_exclusivity_rate: float
     return_and_refund_rate: float
-    phone_number: str | None = None
 
     @field_validator("monthly_gmv_12m")
     @classmethod
     def validate_monthly_gmv_values(cls, values: list[float]) -> list[float]:
         """Ensure exactly 12 non-negative monthly GMV values are provided."""
         if len(values) != 12:
-            raise ValueError("monthly_gmv_12m must contain exactly 12 months")
+            raise ValueError("monthly_gmv_12m must contain exactly 12 values")
         if any(value < 0 for value in values):
             raise ValueError("monthly_gmv_12m values must be non-negative")
         return values
+
+    @field_validator(
+        "coupon_redemption_rate",
+        "unique_customer_count",
+        "customer_return_rate",
+        "avg_order_value",
+        "seasonality_index",
+        "deal_exclusivity_rate",
+        "return_and_refund_rate",
+    )
+    @classmethod
+    def validate_non_negative_numeric_fields(cls, value: float | int) -> float | int:
+        """Enforce non-negative numeric payload fields."""
+        if value < 0:
+            raise ValueError("numeric fields must be non-negative")
+        return value
 
 
 BASELINE_CATEGORY_AVERAGES = CategoryAverages(
@@ -53,26 +67,13 @@ BASELINE_CATEGORY_AVERAGES = CategoryAverages(
     yoy_gmv_growth=10.0,
 )
 
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    """Initialize in-memory caches at startup."""
-    initialize_caches()
-    yield
-
-
-app = FastAPI(title="Merchant Underwriting Dashboard API", lifespan=lifespan)
+app = FastAPI(title="Merchant Underwriting Dashboard API")
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 merchants = build_demo_merchants()
-portfolio_decisions_by_mode: dict[UnderwritingMode, list[dict]] = {
-    "grab_credit": [],
-    "grab_insurance": [],
-}
-accepted_merchants_by_mode: dict[UnderwritingMode, set[str]] = {
-    "grab_credit": set(),
-    "grab_insurance": set(),
-}
+portfolio_decisions: list[dict] = []
+cached_mode: UnderwritingMode = "grab_credit"
+accepted_merchants: set[str] = set()
 
 
 def _build_decision_payload(merchant: MerchantStub, mode: UnderwritingMode) -> dict:
@@ -102,20 +103,22 @@ def _load_portfolio_decisions(mode: UnderwritingMode) -> list[dict]:
     return [_build_decision_payload(merchant, mode=mode) for merchant in merchants]
 
 
-def _get_decisions(mode: UnderwritingMode, refresh: bool = False) -> list[dict]:
-    """Get mode-specific decision cache, optionally refreshing it."""
-    if refresh or not portfolio_decisions_by_mode[mode]:
-        portfolio_decisions_by_mode[mode] = _load_portfolio_decisions(mode)
-    return portfolio_decisions_by_mode[mode]
-
-
 def _find_merchant(merchant_id: str) -> MerchantStub | None:
     return next((merchant for merchant in merchants if merchant.merchant_id == merchant_id), None)
 
 
-def _find_decision(merchant_id: str, mode: UnderwritingMode) -> dict | None:
-    decisions = _get_decisions(mode)
+def _find_decision(merchant_id: str, decisions: list[dict]) -> dict | None:
     return next((decision for decision in decisions if decision.get("merchant_id") == merchant_id), None)
+
+
+def _decisions_for_mode(mode: UnderwritingMode) -> list[dict]:
+    """Return cached decisions, regenerating when requested mode changes."""
+    global cached_mode
+    if not portfolio_decisions or cached_mode != mode:
+        portfolio_decisions.clear()
+        portfolio_decisions.extend(_load_portfolio_decisions(mode))
+        cached_mode = mode
+    return portfolio_decisions
 
 
 def _dashboard_merchant_item(decision: dict, mode: UnderwritingMode) -> dict:
@@ -140,7 +143,7 @@ def _dashboard_merchant_item(decision: dict, mode: UnderwritingMode) -> dict:
         "premium_quote_pct": None if rejected else offer.get("premium_quote_pct"),
         "policy_type": None if rejected else offer.get("policy_type"),
         "rejection_reason": offer.get("rejection_reason") if rejected else None,
-        "accepted": merchant_id in accepted_merchants_by_mode[mode],
+        "accepted": merchant_id in accepted_merchants,
         "offer_sent": bool(decision.get("offer_sent", False)),
         "primary_risk_drivers": decision.get("primary_risk_drivers", []),
         "primary_strengths": decision.get("primary_strengths", []),
@@ -153,9 +156,17 @@ def _dashboard_merchant_item(decision: dict, mode: UnderwritingMode) -> dict:
 
 
 def initialize_caches() -> None:
-    """Generate and cache portfolio decisions for all supported modes."""
-    for mode in ("grab_credit", "grab_insurance"):
-        _get_decisions(mode, refresh=True)
+    """Generate and cache default portfolio decisions for dashboard actions."""
+    global cached_mode
+    portfolio_decisions.clear()
+    portfolio_decisions.extend(_load_portfolio_decisions("grab_credit"))
+    cached_mode = "grab_credit"
+
+
+@app.on_event("startup")
+def startup_load_decisions() -> None:
+    """Initialize in-memory cache at service startup."""
+    initialize_caches()
 
 
 @app.get("/health")
@@ -166,18 +177,23 @@ def health() -> dict:
 
 @app.post("/refresh-decisions")
 def refresh_decisions(mode: UnderwritingMode | None = Query(None)) -> dict:
-    """Refresh cached underwriting decisions for one mode or all modes."""
-    modes = [mode] if mode is not None else ["grab_credit", "grab_insurance"]
-    refreshed: dict[str, int] = {}
-    for current_mode in modes:
-        refreshed[current_mode] = len(_get_decisions(current_mode, refresh=True))
-    return {"status": "refreshed", "modes": refreshed}
+    """Refresh cached decisions (credit cache only) and report refresh metadata."""
+    target_mode = mode or "grab_credit"
+    portfolio_decisions.clear()
+    portfolio_decisions.extend(_load_portfolio_decisions(target_mode))
+    global cached_mode
+    cached_mode = target_mode
+    return {
+        "status": "refreshed",
+        "mode": target_mode,
+        "cached_merchants": len(portfolio_decisions),
+    }
 
 
 @app.get("/dashboard")
 def get_dashboard(mode: UnderwritingMode = Query("grab_credit")) -> dict:
     """Return portfolio summary and merchant-level dashboard rows."""
-    decisions = _get_decisions(mode)
+    decisions = _decisions_for_mode(mode)
     return {
         "mode": mode,
         "portfolio_summary": generate_portfolio_summary(decisions),
@@ -187,15 +203,16 @@ def get_dashboard(mode: UnderwritingMode = Query("grab_credit")) -> dict:
 
 @app.get("/decision-trail/{merchant_id}")
 def get_decision_trail(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")) -> dict:
-    """Return full cached decision and explainability trail for one merchant."""
-    decision = _find_decision(merchant_id, mode)
+    """Return full decision and explainability trail for one merchant."""
+    decisions = _decisions_for_mode(mode)
+    decision = _find_decision(merchant_id, decisions)
     if decision is None:
         raise HTTPException(status_code=404, detail="Merchant not found")
     return {
         "mode": mode,
         "merchant_id": merchant_id,
         "offer_sent": bool(decision.get("offer_sent", False)),
-        "accepted": merchant_id in accepted_merchants_by_mode[mode],
+        "accepted": merchant_id in accepted_merchants,
         "confidence_level": decision.get("confidence_level"),
         "confidence_score": decision.get("confidence_score"),
         "primary_risk_drivers": decision.get("primary_risk_drivers", []),
@@ -208,7 +225,7 @@ def get_decision_trail(merchant_id: str, mode: UnderwritingMode = Query("grab_cr
 @app.get("/ui", response_class=HTMLResponse)
 def dashboard_ui(request: Request, mode: UnderwritingMode = Query("grab_credit")) -> HTMLResponse:
     """Render simple HTML dashboard."""
-    decisions = _get_decisions(mode)
+    decisions = _decisions_for_mode(mode)
     context = {
         "request": request,
         "mode": mode,
@@ -221,11 +238,12 @@ def dashboard_ui(request: Request, mode: UnderwritingMode = Query("grab_credit")
 @app.post("/send-offer/{merchant_id}")
 def send_offer(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")) -> dict:
     """Send approved offer via WhatsApp using mode-aware message formatting."""
-    decision = _find_decision(merchant_id, mode)
+    decisions = _decisions_for_mode(mode)
+    decision = _find_decision(merchant_id, decisions)
     if decision is None:
         raise HTTPException(status_code=404, detail="Merchant not found")
 
-    if merchant_id in accepted_merchants_by_mode[mode]:
+    if merchant_id in accepted_merchants:
         raise HTTPException(status_code=409, detail="Already accepted")
 
     offer = decision.get("offer", {})
@@ -268,7 +286,8 @@ def send_offer(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")) 
 @app.post("/accept-offer/{merchant_id}")
 def accept_offer(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")) -> dict:
     """Mark merchant offer as accepted and return mock NACH initiation payload."""
-    decision = _find_decision(merchant_id, mode)
+    decisions = _decisions_for_mode(mode)
+    decision = _find_decision(merchant_id, decisions)
     if decision is None:
         raise HTTPException(status_code=404, detail="Merchant not found")
 
@@ -286,7 +305,7 @@ def accept_offer(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")
             detail="Offer must be sent on WhatsApp before acceptance",
         )
 
-    accepted_merchants_by_mode[mode].add(merchant_id)
+    accepted_merchants.add(merchant_id)
     return {
         "merchant_id": merchant_id,
         "status": "mandate_initiated",
@@ -295,39 +314,44 @@ def accept_offer(merchant_id: str, mode: UnderwritingMode = Query("grab_credit")
 
 
 @app.post("/underwrite")
-def underwrite_merchant(payload: MerchantInput, mode: UnderwritingMode = Query("grab_credit")) -> dict:
-    """Run underwriting for an input merchant and return decision + AI explanation."""
+def underwrite_merchant(payload: MerchantInput) -> dict:
+    """Run grab_credit underwriting for an input merchant and return decision + explanation.
+
+    This endpoint validates merchant schema with Pydantic, applies additional
+    business-logic safeguards, runs underwriting with baseline category averages,
+    and returns the full decision payload including risk score, tier, offer,
+    confidence level, and AI explanation.
+    """
     try:
-        merchant = MerchantStub(**payload.model_dump())
+        if not payload.merchant_id.strip() or not payload.category.strip():
+            raise HTTPException(status_code=400, detail="merchant_id and category must be non-empty")
+
+        merchant = MerchantStub(**payload.model_dump(), phone_number=None)
+
         decision = generate_underwriting_decision(
             merchant=merchant,
-            mode=mode,
+            mode="grab_credit",
             category_averages=BASELINE_CATEGORY_AVERAGES,
         )
         trail = generate_underwriting_decision_trail(
             merchant=merchant,
             category_averages=BASELINE_CATEGORY_AVERAGES,
-            mode=mode,
+            mode="grab_credit",
         )
 
         offer = decision.get("offer", {})
         tier = offer.get("tier") if isinstance(offer, dict) else None
 
         return {
-            **decision,
+            "risk_score": decision.get("risk_score"),
             "tier": tier,
-            "mode": mode,
+            "offer": offer,
             "ai_explanation": trail.get("final_explanation"),
-            "primary_risk_drivers": trail.get("primary_risk_drivers", []),
-            "primary_strengths": trail.get("primary_strengths", []),
-            "confidence_score": trail.get("confidence_score", 0.0),
+            "confidence_level": decision.get("confidence_level"),
         }
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except HTTPException:
         raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to underwrite merchant: {exc}",
-        ) from exc
+        raise HTTPException(status_code=500, detail=f"Failed to underwrite merchant: {exc}") from exc
