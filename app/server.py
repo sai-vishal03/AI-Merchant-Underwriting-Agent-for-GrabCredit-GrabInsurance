@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -53,7 +54,14 @@ BASELINE_CATEGORY_AVERAGES = CategoryAverages(
 )
 
 
-app = FastAPI(title="Merchant Underwriting Dashboard API")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Initialize in-memory caches at startup."""
+    initialize_caches()
+    yield
+
+
+app = FastAPI(title="Merchant Underwriting Dashboard API", lifespan=lifespan)
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 merchants = build_demo_merchants()
@@ -144,8 +152,7 @@ def _dashboard_merchant_item(decision: dict, mode: UnderwritingMode) -> dict:
     }
 
 
-@app.on_event("startup")
-def startup_load_decisions() -> None:
+def initialize_caches() -> None:
     """Generate and cache portfolio decisions for all supported modes."""
     for mode in ("grab_credit", "grab_insurance"):
         _get_decisions(mode, refresh=True)
