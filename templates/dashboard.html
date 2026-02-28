@@ -4,84 +4,417 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Merchant Underwriting Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #f8f9fb; color: #222; }
-    h1 { margin-bottom: 16px; }
-    .summary { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
-    .card { background: #fff; border: 1px solid #e4e6eb; border-radius: 8px; padding: 12px; }
-    .label { font-size: 12px; color: #666; }
-    .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e4e6eb; }
-    th, td { padding: 10px 12px; border-bottom: 1px solid #eee; text-align: left; }
-    th { background: #fafafa; }
-    .tier-1 { color: #17803d; font-weight: 700; }
-    .tier-2 { color: #c36a00; font-weight: 700; }
-    .tier-3 { color: #c62828; font-weight: 700; }
-    .rejected { color: #777; font-weight: 700; }
-    button { padding: 6px 10px; border: 1px solid #d0d4da; border-radius: 6px; background: #fff; cursor: pointer; }
-    .muted { color: #888; font-size: 12px; }
+    .gauge {
+      width: 150px;
+      height: 150px;
+      border-radius: 9999px;
+      display: grid;
+      place-items: center;
+      background: conic-gradient(var(--gauge-color) calc(var(--score) * 1%), #e5e7eb 0);
+    }
+    .gauge-inner {
+      width: 116px;
+      height: 116px;
+      border-radius: 9999px;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
   </style>
 </head>
-<body>
-  <h1>Merchant Underwriting Dashboard</h1>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-800 text-white shadow-lg">
+    <div class="max-w-7xl mx-auto px-6 py-6">
+      <h1 class="text-2xl font-semibold">Merchant Underwriting Dashboard</h1>
+      <p class="text-slate-200 text-sm mt-1">Project 07 • GrabCredit + GrabInsurance</p>
+    </div>
+  </div>
 
-  <section class="summary">
-    <div class="card"><div class="label">Total Merchants</div><div class="value">{{ portfolio_summary.total_merchants }}</div></div>
-    <div class="card"><div class="label">Approved</div><div class="value">{{ portfolio_summary.total_approved }}</div></div>
-    <div class="card"><div class="label">Rejected</div><div class="value">{{ portfolio_summary.total_rejected }}</div></div>
-    <div class="card"><div class="label">Rejection Rate %</div><div class="value">{{ portfolio_summary.rejection_rate_percentage }}</div></div>
-    <div class="card"><div class="label">Credit Exposure (L)</div><div class="value">{{ portfolio_summary.total_credit_exposure_lakhs }}</div></div>
-  </section>
+  <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+    <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Total Decisions</p><p id="m-total" class="text-2xl font-bold mt-1">{{ metrics.total_decisions }}</p></div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Approvals</p><p id="m-approvals" class="text-2xl font-bold mt-1">{{ metrics.approvals }}</p></div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Rejections</p><p id="m-rejections" class="text-2xl font-bold mt-1">{{ metrics.rejections }}</p></div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Approval Rate %</p><p id="m-rate" class="text-2xl font-bold mt-1">{{ metrics.approval_rate }}</p></div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Avg Risk Score</p><p id="m-risk" class="text-2xl font-bold mt-1">{{ metrics.avg_risk_score }}</p></div>
+    </section>
 
-  <table>
-    <thead>
-      <tr>
-        <th>merchant_id</th>
-        <th>tier</th>
-        <th>confidence_level</th>
-        <th>status</th>
-        <th>credit_limit_lakhs</th>
-        <th>rejection_reason</th>
-        <th>action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for m in merchants %}
-      <tr id="row-{{ m.merchant_id }}">
-        <td>{{ m.merchant_id }}</td>
-        <td class="{{ m.tier_class }}">{{ m.tier or "-" }}</td>
-        <td>{{ m.confidence_level }}</td>
-        <td class="{{ 'rejected' if m.status == 'rejected' else '' }}">{{ m.status }}</td>
-        <td>{{ m.credit_limit_lakhs if m.credit_limit_lakhs is not none else "-" }}</td>
-        <td>{{ m.rejection_reason if m.rejection_reason else "-" }}</td>
-        <td>
-          {% if m.status == 'approved' and not m.accepted %}
-            <button onclick="acceptOffer('{{ m.merchant_id }}', this)">Accept</button>
-          {% elif m.accepted %}
-            <span class="muted">Mandate Initiated</span>
-          {% else %}
-            <span class="muted">N/A</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    <section class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><h3 class="font-semibold mb-3">Dominant Component Distribution</h3><canvas id="dominantChart"></canvas></div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><h3 class="font-semibold mb-3">Risk Component Averages</h3><canvas id="componentChart"></canvas></div>
+    </section>
+
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <h3 class="font-semibold mb-3">Tier Trend Over Time</h3>
+      <canvas id="tierTrendChart"></canvas>
+    </section>
+
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-4">
+      <div class="flex flex-wrap gap-2 items-center justify-between">
+        <h3 class="font-semibold">Decision History v2</h3>
+        <div class="flex gap-2">
+          <select id="tierFilter" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">All Tiers</option>
+            <option value="Tier 1">Tier 1</option>
+            <option value="Tier 2">Tier 2</option>
+            <option value="Tier 3">Tier 3</option>
+          </select>
+          <select id="modelFilter" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">All Models</option>
+          </select>
+          <button class="rounded-lg border border-slate-300 px-3 py-2 text-sm" onclick="reloadDecisions(1)">Apply Filters</button>
+        </div>
+      </div>
+
+      <div class="overflow-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-100 text-slate-600">
+            <tr>
+              <th class="text-left px-3 py-2">merchant_id</th>
+              <th class="text-left px-3 py-2">model_id</th>
+              <th class="text-left px-3 py-2">product_mode</th>
+              <th class="text-left px-3 py-2">risk_score</th>
+              <th class="text-left px-3 py-2">tier</th>
+              <th class="text-left px-3 py-2">dominant_component</th>
+              <th class="text-left px-3 py-2">credit/coverage</th>
+              <th class="text-left px-3 py-2">premium</th>
+              <th class="text-left px-3 py-2">offer_status</th>
+              <th class="text-left px-3 py-2">approved</th>
+              <th class="text-left px-3 py-2">created_at</th>
+              <th class="text-left px-3 py-2">actions</th>
+            </tr>
+          </thead>
+          <tbody id="decisionsBody" class="divide-y divide-slate-200"></tbody>
+        </table>
+      </div>
+
+      <div class="flex gap-2 items-center">
+        <button class="rounded-lg border border-slate-300 px-3 py-2 text-sm" onclick="prevPage()">Prev</button>
+        <span id="pageInfo" class="text-sm text-slate-600">Page 1</span>
+        <button class="rounded-lg border border-slate-300 px-3 py-2 text-sm" onclick="nextPage()">Next</button>
+      </div>
+    </section>
+
+    <section id="merchantDetail" class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 hidden">
+      <div class="flex flex-wrap justify-between gap-4">
+        <div>
+          <h3 class="font-semibold text-lg">Merchant Detail Panel</h3>
+          <p id="detailMerchant" class="text-slate-600 text-sm"></p>
+        </div>
+        <div id="replayBadge" class="hidden rounded-full px-3 py-1 text-xs font-semibold"></div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
+        <div class="flex flex-col items-center gap-2">
+          <div id="riskGauge" class="gauge" style="--score:0; --gauge-color:#22c55e;"><div class="gauge-inner"><div id="gaugeScore" class="text-2xl font-bold">0</div><div id="gaugeTier" class="text-xs text-slate-500">Tier</div></div></div>
+          <div class="text-xs text-slate-500">Risk Score Gauge</div>
+        </div>
+
+        <div class="lg:col-span-2 space-y-4">
+          <div>
+            <label class="text-sm font-medium">Model Comparison</label>
+            <select id="modelCompare" class="ml-2 rounded-lg border border-slate-300 px-3 py-2 text-sm" onchange="updateShadowModel()">
+              <option value="active">Active Model</option>
+              <option value="alternate">Simulated Alternate Model (+3%)</option>
+            </select>
+            <div id="shadowCompare" class="mt-2 text-sm text-slate-600"></div>
+          </div>
+
+          <div>
+            <h4 class="font-medium mb-2">Risk Contribution Mini Chart</h4>
+            <div id="riskContributionBars" class="space-y-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <h4 class="font-medium mb-2">Decision Timeline</h4>
+        <ol id="decisionTimeline" class="relative border-s border-slate-200 ml-2 space-y-4 pl-5"></ol>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <h3 class="font-semibold mb-2">Portfolio Simulation</h3>
+      <button class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm" onclick="runSimulation()">Run /simulate-portfolio</button>
+      <pre id="simulationResult" class="bg-slate-900 text-slate-100 rounded-lg p-3 mt-3 text-xs overflow-auto">Click to run simulation.</pre>
+    </section>
+  </main>
+
+  <div class="fixed inset-0 bg-black/40 hidden items-center justify-center" id="snapshotModal" onclick="closeSnapshot(event)">
+    <div class="w-[92vw] max-w-4xl max-h-[80vh] overflow-auto bg-white rounded-xl shadow-xl p-4" onclick="event.stopPropagation()">
+      <h3 class="font-semibold mb-2">Audit Snapshot</h3>
+      <pre id="snapshotContent" class="bg-slate-900 text-slate-100 rounded-lg p-3 text-xs">Loading...</pre>
+      <button class="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm" onclick="document.getElementById('snapshotModal').classList.add('hidden');document.getElementById('snapshotModal').classList.remove('flex');">Close</button>
+    </div>
+  </div>
 
   <script>
-    async function acceptOffer(merchantId, btn) {
-      btn.disabled = true;
-      try {
-        const res = await fetch(`/accept-offer/${merchantId}`, { method: 'POST' });
-        if (!res.ok) throw new Error('Request failed');
-        const data = await res.json();
-        btn.replaceWith(Object.assign(document.createElement('span'), { className: 'muted', textContent: 'Mandate Initiated' }));
-        console.log(data);
-      } catch (e) {
-        btn.disabled = false;
-        alert('Failed to accept offer');
+    let currentPage = 1;
+    const limit = 20;
+    let lastTotal = 0;
+    let selectedDecision = null;
+
+    function statusPillClass(status) {
+      if (status === 'accepted') return 'bg-emerald-100 text-emerald-700';
+      if (status === 'manual_review') return 'bg-amber-100 text-amber-700';
+      if (status === 'rejected') return 'bg-red-100 text-red-700';
+      return 'bg-blue-100 text-blue-700';
+    }
+
+    function tierPillClass(tier, offerStatus) {
+      if (offerStatus === 'rejected') return 'bg-red-100 text-red-700';
+      if (tier === 'Tier 1') return 'bg-emerald-100 text-emerald-700';
+      if (tier === 'Tier 2') return 'bg-amber-100 text-amber-700';
+      return 'bg-orange-100 text-orange-700';
+    }
+
+    function gaugeColor(tier, offerStatus) {
+      if (offerStatus === 'rejected') return '#ef4444';
+      if (tier === 'Tier 1') return '#22c55e';
+      if (tier === 'Tier 2') return '#eab308';
+      return '#f97316';
+    }
+
+    function tierFromScore(score, rejected=false) {
+      if (rejected) return 'Rejected';
+      if (score >= 70) return 'Tier 3';
+      if (score <= 38) return 'Tier 1';
+      return 'Tier 2';
+    }
+
+    async function loadAnalytics() {
+      const analyticsRes = await fetch('/dashboard/analytics');
+      const analytics = await analyticsRes.json();
+
+      new Chart(document.getElementById('dominantChart'), {
+        type: 'pie',
+        data: { labels: Object.keys(analytics.dominant_component_distribution), datasets: [{ data: Object.values(analytics.dominant_component_distribution) }] }
+      });
+
+      new Chart(document.getElementById('componentChart'), {
+        type: 'bar',
+        data: { labels: Object.keys(analytics.risk_component_averages), datasets: [{ label: 'Average Contribution', data: Object.values(analytics.risk_component_averages), backgroundColor: '#60a5fa' }] }
+      });
+
+      new Chart(document.getElementById('tierTrendChart'), {
+        type: 'line',
+        data: {
+          labels: analytics.tier_trend.map(x => x.date),
+          datasets: [
+            { label: 'Tier 1', data: analytics.tier_trend.map(x => x['Tier 1']), borderColor: '#16a34a' },
+            { label: 'Tier 2', data: analytics.tier_trend.map(x => x['Tier 2']), borderColor: '#f59e0b' },
+            { label: 'Tier 3', data: analytics.tier_trend.map(x => x['Tier 3']), borderColor: '#f97316' }
+          ]
+        }
+      });
+    }
+
+    async function reloadDecisions(page = 1) {
+      currentPage = page;
+      const tier = document.getElementById('tierFilter').value;
+      const model = document.getElementById('modelFilter').value;
+      const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (tier) query.set('tier', tier);
+      if (model) query.set('model_id', model);
+
+      const res = await fetch('/dashboard/decisions?' + query.toString());
+      const data = await res.json();
+      lastTotal = data.total;
+
+      const modelSelect = document.getElementById('modelFilter');
+      if (modelSelect.options.length <= 1) {
+        data.models.forEach(modelId => {
+          const opt = document.createElement('option');
+          opt.value = modelId;
+          opt.textContent = modelId;
+          modelSelect.appendChild(opt);
+        });
+      }
+
+      const tbody = document.getElementById('decisionsBody');
+      tbody.innerHTML = '';
+      data.decisions.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50';
+        tr.innerHTML = `
+          <td class="px-3 py-2">${row.merchant_id}</td>
+          <td class="px-3 py-2 text-xs">${row.model_id ?? '-'}</td>
+          <td class="px-3 py-2">${row.product_mode ?? '-'}</td>
+          <td class="px-3 py-2 font-semibold">${row.risk_score}</td>
+          <td class="px-3 py-2"><span class="rounded-full px-2 py-1 text-xs ${tierPillClass(row.tier, row.offer_status)}">${row.tier}</span></td>
+          <td class="px-3 py-2">${row.dominant_component ?? '-'}</td>
+          <td class="px-3 py-2">${row.credit_limit_lakhs ?? row.coverage_amount ?? '-'}</td>
+          <td class="px-3 py-2">${row.premium_quote ?? '-'}</td>
+          <td class="px-3 py-2"><span class="rounded-full px-2 py-1 text-xs ${statusPillClass(row.offer_status)}">${row.offer_status ?? '-'}</span></td>
+          <td class="px-3 py-2">${row.approved}</td>
+          <td class="px-3 py-2 text-xs">${row.created_at}</td>
+          <td class="px-3 py-2 space-x-1">
+            <button class="rounded border border-slate-300 px-2 py-1 text-xs" onclick="viewSnapshot('${row.request_hash}')">Snapshot</button>
+            <button class="rounded border border-slate-300 px-2 py-1 text-xs" onclick="replayDecision('${row.request_hash}')">Replay</button>
+            <button class="rounded border border-slate-300 px-2 py-1 text-xs" onclick="acceptOffer('${row.request_hash}')">Accept</button>
+            <button class="rounded border border-indigo-300 bg-indigo-50 px-2 py-1 text-xs" onclick='openDetail(${JSON.stringify(row).replace(/'/g, "&#39;")})'>Details</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('pageInfo').textContent = `Page ${data.page} / ${Math.max(1, Math.ceil(data.total / data.limit))}`;
+    }
+
+    function prevPage() { if (currentPage > 1) reloadDecisions(currentPage - 1); }
+    function nextPage() { if (currentPage * limit < lastTotal) reloadDecisions(currentPage + 1); }
+
+    async function openDetail(row) {
+      selectedDecision = row;
+      document.getElementById('merchantDetail').classList.remove('hidden');
+      document.getElementById('detailMerchant').textContent = `${row.merchant_id} • ${row.product_mode || '-'} • ${row.model_id || '-'}`;
+
+      const color = gaugeColor(row.tier, row.offer_status);
+      const gauge = document.getElementById('riskGauge');
+      gauge.style.setProperty('--score', Math.max(0, Math.min(100, row.risk_score || 0)));
+      gauge.style.setProperty('--gauge-color', color);
+      document.getElementById('gaugeScore').textContent = String(row.risk_score ?? 0);
+      document.getElementById('gaugeTier').textContent = row.offer_status === 'rejected' ? 'Rejected' : row.tier;
+
+      const snapshotRes = await fetch('/dashboard/snapshot/' + row.request_hash);
+      const snapshotData = await snapshotRes.json();
+      const contributions = snapshotData.snapshot.risk_contributions || {
+        growth_contribution: 0,
+        volatility_contribution: 0,
+        refund_contribution: 0,
+        loyalty_contribution: 0,
+      };
+
+      renderContributionBars(contributions);
+      renderTimeline(row, snapshotData.snapshot);
+      updateShadowModel();
+
+      const replayBadge = document.getElementById('replayBadge');
+      replayBadge.className = 'hidden';
+      replayBadge.textContent = '';
+      replayBadge.dataset.state = '';
+    }
+
+    function renderContributionBars(contributions) {
+      const bars = document.getElementById('riskContributionBars');
+      const items = [
+        ['Growth', contributions.growth_contribution || 0],
+        ['Volatility', contributions.volatility_contribution || 0],
+        ['Refund', contributions.refund_contribution || 0],
+        ['Loyalty', contributions.loyalty_contribution || 0],
+      ];
+      bars.innerHTML = items.map(([label, val]) => `
+        <div>
+          <div class="flex justify-between text-xs text-slate-600"><span>${label}</span><span>${Number(val).toFixed(2)}%</span></div>
+          <div class="h-2 rounded bg-slate-100 overflow-hidden"><div class="h-2 bg-indigo-500" style="width:${Math.max(0, Math.min(100, Number(val)))}%"></div></div>
+        </div>
+      `).join('');
+    }
+
+    function renderTimeline(row, snapshot) {
+      const timeline = document.getElementById('decisionTimeline');
+      const steps = [
+        { title: 'Decision Created', desc: row.created_at },
+      ];
+      if (snapshot?.offer?.status === 'APPROVED') {
+        steps.push({ title: 'Offer Sent', desc: 'Offer delivered to merchant channel' });
+      }
+      if (row.offer_status === 'accepted') {
+        steps.push({ title: 'Accepted', desc: 'Merchant accepted offer and mandate initiated' });
+      }
+      if (row.tier === 'Tier 3' && row.offer_status === 'manual_review') {
+        steps.push({ title: 'Manual Review', desc: 'Tier 3 routed for risk ops review' });
+      }
+      timeline.innerHTML = steps.map(step => `
+        <li class="relative">
+          <span class="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-indigo-500"></span>
+          <p class="font-medium text-sm">${step.title}</p>
+          <p class="text-xs text-slate-500">${step.desc}</p>
+        </li>
+      `).join('');
+    }
+
+    function updateShadowModel() {
+      if (!selectedDecision) return;
+      const mode = document.getElementById('modelCompare').value;
+      const base = Number(selectedDecision.risk_score || 0);
+      const rejected = selectedDecision.offer_status === 'rejected';
+      const shadow = mode === 'alternate' ? Math.min(100, Number((base * 1.03).toFixed(2))) : base;
+      const originalTier = tierFromScore(base, rejected);
+      const simulatedTier = tierFromScore(shadow, rejected);
+      const tierDiff = originalTier === simulatedTier ? 'No Change' : `${originalTier} → ${simulatedTier}`;
+      document.getElementById('shadowCompare').innerHTML = `
+        <div class="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm">
+          <p><span class="font-medium">Original Risk Score:</span> ${base}</p>
+          <p><span class="font-medium">Simulated Risk Score:</span> ${shadow}</p>
+          <p><span class="font-medium">Tier Difference:</span> ${tierDiff}</p>
+        </div>
+      `;
+    }
+
+    async function viewSnapshot(requestHash) {
+      const modal = document.getElementById('snapshotModal');
+      const content = document.getElementById('snapshotContent');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      content.textContent = 'Loading...';
+      const res = await fetch('/dashboard/snapshot/' + requestHash);
+      const data = await res.json();
+      content.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function closeSnapshot(event) {
+      if (event.target.id === 'snapshotModal') {
+        event.target.classList.add('hidden');
+        event.target.classList.remove('flex');
       }
     }
+
+    async function replayDecision(requestHash) {
+      const res = await fetch('/replay/' + requestHash, { method: 'POST' });
+      const data = await res.json();
+      if (selectedDecision && selectedDecision.request_hash === requestHash) {
+        const badge = document.getElementById('replayBadge');
+        badge.classList.remove('hidden');
+        if (data.matches) {
+          badge.className = 'rounded-full px-3 py-1 text-xs font-semibold bg-emerald-100 text-emerald-700';
+          badge.textContent = 'Replay Verified';
+        } else {
+          badge.className = 'rounded-full px-3 py-1 text-xs font-semibold bg-red-100 text-red-700';
+          badge.textContent = 'Replay Mismatch';
+        }
+      } else {
+        alert(`Replay match: ${data.matches}\nModel match: ${data.model_match}`);
+      }
+    }
+
+    async function acceptOffer(requestHash) {
+      const res = await fetch('/accept-offer/' + requestHash, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || 'Failed to accept offer');
+        return;
+      }
+      alert(`Offer accepted. Mandate: ${data.nach_mandate_id || data.mandate_reference}`);
+      reloadDecisions(currentPage);
+    }
+
+    async function runSimulation() {
+      const resultNode = document.getElementById('simulationResult');
+      resultNode.textContent = 'Running simulation...';
+      const response = await fetch('/simulate-portfolio', { method: 'POST' });
+      const data = await response.json();
+      resultNode.textContent = JSON.stringify(data, null, 2);
+      reloadDecisions(currentPage);
+    }
+
+    loadAnalytics();
+    reloadDecisions(1);
   </script>
 </body>
 </html>
