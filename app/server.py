@@ -248,7 +248,7 @@ def startup_load_decisions() -> None:
 
 @app.get("/")
 def root_redirect(request: Request):
-    accept_header = request.headers.get("accept", "")
+    accept_header = request.headers.get("accept", "").lower()
     if "text/html" in accept_header:
         return RedirectResponse(url="/dashboard", status_code=307)
     return {"status": "ok", "dashboard": "/dashboard"}

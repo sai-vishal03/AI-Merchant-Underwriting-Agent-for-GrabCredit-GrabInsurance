@@ -373,6 +373,12 @@
       const color = gaugeColorFromScore(bounded);
       const remaining = 100 - bounded;
 
+      if (typeof Chart === 'undefined') {
+        document.getElementById('gaugeScore').textContent = String(bounded);
+        document.getElementById('gaugeTier').textContent = `${tierText} (chart unavailable)`;
+        return;
+      }
+
       if (riskGaugeChart) riskGaugeChart.destroy();
 
       riskGaugeChart = new Chart(document.getElementById('riskGaugeChart'), {
@@ -471,8 +477,13 @@
     }
 
     async function openRationale(row) {
-      const snapshotData = await getSnapshot(row.request_hash);
-      const snapshot = snapshotData.snapshot || {};
+      let snapshot = {};
+      try {
+        const snapshotData = await getSnapshot(row.request_hash);
+        snapshot = snapshotData.snapshot || {};
+      } catch (_err) {
+        snapshot = {};
+      }
       const contributions = snapshot.risk_contributions || {
         growth_contribution: 0,
         volatility_contribution: 0,
