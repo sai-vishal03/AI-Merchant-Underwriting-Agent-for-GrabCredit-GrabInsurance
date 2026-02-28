@@ -13,7 +13,8 @@
       border-radius: 9999px;
       display: grid;
       place-items: center;
-      background: conic-gradient(var(--gauge-color) calc(var(--score) * 1%), #e5e7eb 0);
+      background: conic-gradient(var(--gauge-color) calc(var(--score) * 1%), #f1f5f9 0);
+      box-shadow: inset 0 4px 12px rgba(0,0,0,0.05);
     }
     .gauge-inner {
       width: 116px;
@@ -27,29 +28,34 @@
     }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen">
-  <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-800 text-white shadow-lg">
-    <div class="max-w-7xl mx-auto px-6 py-6">
-      <h1 class="text-2xl font-semibold">Merchant Underwriting Dashboard</h1>
-      <p class="text-slate-200 text-sm mt-1">Project 07 • GrabCredit + GrabInsurance</p>
-    </div>
+<body class="bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50 text-slate-800 min-h-screen antialiased">
+  <div class="bg-gradient-to-r from-slate-950 via-indigo-900 to-slate-900 text-white shadow-xl border-b border-indigo-800/40">
+    <div class="max-w-7xl mx-auto px-6 py-8 flex justify-between items-center">
+  <div>
+    <h1 class="text-3xl font-semibold tracking-tight">Merchant Underwriting Dashboard</h1>
+    <p class="text-indigo-200 text-sm mt-1">AI Risk Engine • GrabCredit + GrabInsurance</p>
   </div>
+  <div class="text-right">
+    <p class="text-xs text-indigo-300">Environment</p>
+    <p class="text-sm font-medium">Production Simulation</p>
+  </div>
+</div>
 
   <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
-    <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Total Decisions</p><p id="m-total" class="text-2xl font-bold mt-1">{{ metrics.total_decisions }}</p></div>
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Approvals</p><p id="m-approvals" class="text-2xl font-bold mt-1">{{ metrics.approvals }}</p></div>
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Rejections</p><p id="m-rejections" class="text-2xl font-bold mt-1">{{ metrics.rejections }}</p></div>
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Approval Rate %</p><p id="m-rate" class="text-2xl font-bold mt-1">{{ metrics.approval_rate }}</p></div>
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><p class="text-xs text-slate-500">Avg Risk Score</p><p id="m-risk" class="text-2xl font-bold mt-1">{{ metrics.avg_risk_score }}</p></div>
+    <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6">
+      <div class="bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-200/60 p-5 hover:shadow-lg transition"><p class="text-xs text-slate-500">Total Decisions</p><p id="m-total" class="text-2xl font-bold mt-1">{{ metrics.total_decisions }}</p></div>
+      <div class="bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-200/60 p-5 hover:shadow-lg transition"><p class="text-xs text-slate-500">Approvals</p><p id="m-approvals" class="text-2xl font-bold mt-1">{{ metrics.approvals }}</p></div>
+      <div class="bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-200/60 p-5 hover:shadow-lg transition"><p class="text-xs text-slate-500">Rejections</p><p id="m-rejections" class="text-2xl font-bold mt-1">{{ metrics.rejections }}</p></div>
+      <div class="bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-200/60 p-5 hover:shadow-lg transition"><p class="text-xs text-slate-500">Approval Rate %</p><p id="m-rate" class="text-2xl font-bold mt-1">{{ metrics.approval_rate }}</p></div>
+      <div class="bg-white/90 backdrop-blur rounded-2xl shadow-md border border-slate-200/60 p-5 hover:shadow-lg transition"><p class="text-xs text-slate-500">Avg Risk Score</p><p id="m-risk" class="text-2xl font-bold mt-1">{{ metrics.avg_risk_score }}</p></div>
     </section>
 
     <section class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><h3 class="font-semibold mb-3">Dominant Component Distribution</h3><canvas id="dominantChart"></canvas></div>
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4"><h3 class="font-semibold mb-3">Risk Component Averages</h3><canvas id="componentChart"></canvas></div>
+      <div class="bg-white rounded-2xl shadow-md border border-slate-200/60 p-6"><h3 class="font-semibold mb-3">Dominant Component Distribution</h3><canvas id="dominantChart"></canvas></div>
+      <div class="bg-white rounded-2xl shadow-md border border-slate-200/60 p-6"><h3 class="font-semibold mb-3">Risk Component Averages</h3><canvas id="componentChart"></canvas></div>
     </section>
 
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+    <section class="bg-slate-900 rounded-2xl shadow-xl border border-slate-800 p-6 text-white">
       <h3 class="font-semibold mb-3">Tier Trend Over Time</h3>
       <canvas id="tierTrendChart"></canvas>
     </section>
@@ -73,7 +79,7 @@
 
       <div class="overflow-auto">
         <table class="min-w-full text-sm">
-          <thead class="bg-slate-100 text-slate-600">
+          <thead class="bg-slate-100/70 text-slate-700 uppercase text-xs tracking-wider">
             <tr>
               <th class="text-left px-3 py-2">merchant_id</th>
               <th class="text-left px-3 py-2">model_id</th>
@@ -140,7 +146,7 @@
 
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
       <h3 class="font-semibold mb-2">Portfolio Simulation</h3>
-      <button class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm" onclick="runSimulation()">Run /simulate-portfolio</button>
+      <button class="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-sm transition" onclick="runSimulation()">Run /simulate-portfolio</button>
       <pre id="simulationResult" class="bg-slate-900 text-slate-100 rounded-lg p-3 mt-3 text-xs overflow-auto">Click to run simulation.</pre>
     </section>
   </main>
@@ -240,7 +246,7 @@
       tbody.innerHTML = '';
       data.decisions.forEach(row => {
         const tr = document.createElement('tr');
-        tr.className = 'hover:bg-slate-50';
+        tr.className = 'hover:bg-indigo-50/40 transition';
         tr.innerHTML = `
           <td class="px-3 py-2">${row.merchant_id}</td>
           <td class="px-3 py-2 text-xs">${row.model_id ?? '-'}</td>
