@@ -191,7 +191,7 @@ def save_underwriting_decision(
     request_payload: dict[str, Any] | None,
     decision_source: str,
     created_by: str,
-) -> dict[str, Any]:
+) -> tuple[bool, dict[str, Any]]:
     """Persist underwriting decision using request-hash idempotency."""
     with _get_connection() as conn:
         existing = conn.execute(
@@ -205,7 +205,7 @@ def save_underwriting_decision(
             (merchant_id, mode, request_hash),
         ).fetchone()
         if existing:
-            return {
+            return False, {
                 "merchant_id": existing["merchant_id"],
                 "mode": existing["mode"],
                 "model_id": existing["model_id"],
@@ -219,7 +219,6 @@ def save_underwriting_decision(
                 "decision_source": existing["decision_source"],
                 "created_by": existing["created_by"],
                 "created_at": existing["created_at"],
-                "idempotent": True,
             }
 
         created_at = datetime.now(timezone.utc).isoformat()
@@ -254,7 +253,7 @@ def save_underwriting_decision(
             ),
         )
 
-    return {
+    return True, {
         "merchant_id": merchant_id,
         "mode": mode,
         "model_id": model_id,
@@ -268,7 +267,6 @@ def save_underwriting_decision(
         "decision_source": decision_source,
         "created_by": created_by,
         "created_at": created_at,
-        "idempotent": False,
     }
 
 
@@ -395,7 +393,14 @@ def get_dashboard_decisions(
             SELECT d.merchant_id, d.model_id, d.mode, d.risk_score, d.tier, d.request_hash, d.created_at, d.offer,
                    a.full_snapshot_json
             FROM underwriting_decisions d
-            LEFT JOIN decision_audit_trail a ON a.request_hash = d.request_hash
+            LEFT JOIN (
+                SELECT request_hash, MAX(created_at) AS latest_created
+                FROM decision_audit_trail
+                GROUP BY request_hash
+            ) latest_audit ON latest_audit.request_hash = d.request_hash
+            LEFT JOIN decision_audit_trail a
+                ON a.request_hash = latest_audit.request_hash
+                AND a.created_at = latest_audit.latest_created
             {where_clause}
             ORDER BY d.created_at DESC
             LIMIT ? OFFSET ?

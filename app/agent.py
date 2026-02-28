@@ -357,7 +357,12 @@ class MerchantUnderwritingOrchestrator:
         self.offer_agent = OfferGenerationAgent()
         self.explainability_agent = ExplainabilityAgent()
 
-    def evaluate_merchant(self, merchant_profile: dict[str, Any], product_mode: str) -> dict[str, Any]:
+    def evaluate_merchant(
+        self,
+        merchant_profile: dict[str, Any],
+        product_mode: str,
+        simulation_override: bool = False,
+    ) -> dict[str, Any]:
         self._validate_mode(product_mode)
 
         active_model = get_active_model(product_mode)
@@ -392,9 +397,11 @@ class MerchantUnderwritingOrchestrator:
 
         confidence_level = self._derive_confidence(features, risk_snapshot)
 
+        simulation_active = simulation_override or FEATURE_FLAGS.get("simulation_mode", False)
+
         idempotent = False
-        if not FEATURE_FLAGS["simulation_mode"]:
-            decision_record = save_underwriting_decision(
+        if not simulation_active:
+            created, _decision_record = save_underwriting_decision(
                 merchant_id=str(features["merchant_id"]),
                 mode=product_mode,
                 model_id=model_id,
@@ -408,7 +415,7 @@ class MerchantUnderwritingOrchestrator:
                 decision_source=model_name,
                 created_by="agent_v1",
             )
-            idempotent = bool(decision_record.get("idempotent", False))
+            idempotent = not created
 
             save_decision_audit_trail(
                 merchant_id=str(features["merchant_id"]),
@@ -429,7 +436,7 @@ class MerchantUnderwritingOrchestrator:
                 },
             )
 
-            if merchant_profile.get("phone_number") and offer.get("status") == "APPROVED":
+            if created and merchant_profile.get("phone_number") and offer.get("status") == "APPROVED":
                 send_whatsapp_offer(str(merchant_profile["phone_number"]), self._build_whatsapp_message(offer))
 
         return {

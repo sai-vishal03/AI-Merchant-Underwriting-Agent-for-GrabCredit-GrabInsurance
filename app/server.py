@@ -19,7 +19,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.agent import (
     MerchantUnderwritingAgent,
-    get_feature_flags,
     get_sample_merchants,
     run_portfolio_simulation,
     set_feature_flag,
@@ -343,12 +342,11 @@ def replay_decision(request_hash: str) -> ReplayResponse:
     if not isinstance(merchant_profile, dict) or not isinstance(mode, str):
         raise HTTPException(status_code=422, detail="Stored request payload is malformed")
 
-    current_flags = get_feature_flags()
-    set_feature_flag("simulation_mode", True)
-    try:
-        replayed = MerchantUnderwritingAgent().evaluate_merchant(merchant_profile, mode)
-    finally:
-        set_feature_flag("simulation_mode", current_flags["simulation_mode"])
+    replayed = MerchantUnderwritingAgent().evaluate_merchant(
+        merchant_profile,
+        mode,
+        simulation_override=True,
+    )
 
     score_match = replayed["risk_score"] == stored["risk_score"]
     tier_match = replayed["tier"] == stored["tier"]
