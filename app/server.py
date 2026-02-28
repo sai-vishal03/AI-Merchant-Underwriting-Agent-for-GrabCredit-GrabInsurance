@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import stdev
@@ -12,6 +13,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
+from app.database import get_accepted_merchant_ids, get_decision_history, get_portfolio_analytics, get_portfolio_analytics_v2, get_portfolio_risk_alerts, initialize_database, save_accepted_offer, save_underwriting_decision, upsert_merchant
 from app.explainability import CategoryAverages, generate_underwriting_decision_trail
 from app.portfolio import generate_portfolio_summary
 from app.underwriting import generate_underwriting_decision
@@ -87,17 +89,18 @@ def _build_merchants() -> list[MerchantStub]:
     ]
 
 
-app = FastAPI(title="Merchant Underwriting Dashboard API")
-
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 merchants = _build_merchants()
 portfolio_decisions: list[dict] = []
 accepted_merchants: set[str] = set()
 
 
-@app.on_event("startup")
-def startup_load_decisions() -> None:
-    """Generate and cache underwriting decisions at service startup."""
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Initialize database state and preload cached decisions on application startup."""
+    initialize_database()
+    accepted_merchants.clear()
+    accepted_merchants.update(get_accepted_merchant_ids())
     portfolio_decisions.clear()
     for merchant in merchants:
         decision = generate_underwriting_decision(
@@ -106,6 +109,10 @@ def startup_load_decisions() -> None:
             category_averages=BASELINE_CATEGORY_AVERAGES,
         )
         portfolio_decisions.append(decision)
+    yield
+
+
+app = FastAPI(title="Merchant Underwriting Dashboard API", lifespan=lifespan)
 
 
 def _dashboard_merchant_item(decision: dict) -> dict:
@@ -157,7 +164,7 @@ def _get_decision_by_merchant_id(merchant_id: str) -> dict | None:
 
 @app.post("/accept-offer/{merchant_id}")
 def accept_offer(merchant_id: str) -> dict:
-    """Mark merchant offer as accepted and return mock NACH initiation payload."""
+    """Accept an approved merchant offer, persist acceptance, and return a mock mandate reference."""
     decision = _get_decision_by_merchant_id(merchant_id)
     if decision is None:
         raise HTTPException(status_code=404, detail="Merchant not found")
@@ -171,11 +178,99 @@ def accept_offer(merchant_id: str) -> dict:
         )
 
     accepted_merchants.add(merchant_id)
+    mandate_reference = f"MOCK-NACH-{random.randint(1000, 9999)}"
+    try:
+        save_accepted_offer(
+            merchant_id=merchant_id,
+            mode="grab_credit",
+            mandate_reference=mandate_reference,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to persist accepted offer: {exc}",
+        ) from exc
+
     return {
         "merchant_id": merchant_id,
         "status": "mandate_initiated",
-        "mandate_reference": f"MOCK-NACH-{random.randint(1000, 9999)}",
+        "mandate_reference": mandate_reference,
     }
+
+
+@app.get("/portfolio/analytics")
+def get_portfolio_analytics_endpoint(mode: str | None = None) -> dict:
+    """Return portfolio analytics computed from persisted underwriting decisions."""
+    try:
+        return get_portfolio_analytics(mode)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch portfolio analytics: {exc}",
+        ) from exc
+
+
+@app.get("/portfolio/analytics/v2")
+def get_portfolio_analytics_v2_endpoint(mode: str | None = None) -> dict:
+    """Return SQL-aggregated portfolio analytics from persisted underwriting decisions."""
+    try:
+        return get_portfolio_analytics_v2(mode)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch portfolio analytics v2: {exc}",
+        ) from exc
+
+
+@app.get("/portfolio/risk-alerts")
+def get_portfolio_risk_alerts_endpoint(mode: str | None = None) -> dict:
+    """Return portfolio risk alerts derived from persisted underwriting decisions."""
+    try:
+        alerts = get_portfolio_risk_alerts(mode)
+        return {
+            "alert_count": len(alerts),
+            "alerts": alerts,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch portfolio risk alerts: {exc}",
+        ) from exc
+
+
+@app.get("/decisions/{merchant_id}")
+def get_merchant_decisions(
+    merchant_id: str,
+    mode: str | None = None,
+    limit: int = 20,
+    cursor: str | None = None,
+) -> dict:
+    """Return persisted underwriting decision history for a merchant from SQLite."""
+    if limit > 100:
+        raise HTTPException(status_code=422, detail="limit must be less than or equal to 100")
+    if limit <= 0:
+        raise HTTPException(status_code=422, detail="limit must be greater than zero")
+
+    try:
+        result = get_decision_history(merchant_id, mode=mode, limit=limit, cursor=cursor)
+        decisions = result.get("data", [])
+        if not decisions:
+            raise HTTPException(status_code=404, detail="No decision history found for this merchant")
+        return {
+            "merchant_id": merchant_id,
+            "total_records": len(decisions),
+            "decisions": decisions,
+            "next_cursor": result.get("next_cursor"),
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch decision history: {exc}",
+        ) from exc
 
 
 @app.post("/underwrite")
@@ -196,9 +291,24 @@ def underwrite_merchant(payload: MerchantInput) -> dict:
         offer = decision.get("offer", {})
         tier = offer.get("tier") if isinstance(offer, dict) else None
 
+        # Persist underwriting result to SQLite
+        upsert_merchant(merchant.merchant_id, merchant.category)
+        save_underwriting_decision(
+            merchant_id=merchant.merchant_id,
+            mode="grab_credit",
+            risk_score=decision.get("risk_score"),
+            tier=tier,
+            confidence_level=decision.get("confidence_level"),
+            offer=offer,
+            ai_explanation=trail.get("final_explanation"),
+        )
+
         return {
-            **decision,
+            "merchant_id": decision.get("merchant_id"),
+            "risk_score": decision.get("risk_score"),
             "tier": tier,
+            "confidence_level": decision.get("confidence_level"),
+            "offer": offer,
             "ai_explanation": trail.get("final_explanation"),
         }
     except ValueError as exc:
