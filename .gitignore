@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+
+# SQLite database
+*.db
+underwriting.db
+
+# OS
+.DS_Store
+Thumbs.db
